@@ -1,0 +1,4 @@
+{
+  "from": "email address to send notification from",
+  "to": "email address to send notification to"
+}
