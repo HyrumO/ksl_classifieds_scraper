@@ -4,8 +4,7 @@ from datetime import datetime as dt
 from datetime import timedelta as td
 from email.mime.text import MIMEText
 import json
-import os
-import pickle
+# import pickle
 from pprint import pformat
 import re
 import smtplib
@@ -22,22 +21,11 @@ with open('config.json') as config_file:
 now = dt.now()
 yesterday = now - td(hours=24)
 
-# class WebDriver:
-#     def __init__(self, driver):
-#         try:
-#             with open('results.pickle', 'rb') as p:
-#                 driver.results = pickle.load(p)
-#         except FileNotFoundError:
-#             driver.results = {}
-#         self.driver = driver
-# 
-#     def __enter__(self):
-#         return self.driver
-# 
-#     def __exit__(self, exc_type, exc_val, exc_tb):
-#         with open('results.pickle', 'wb') as p:
-#             pickle.dump(self.driver.results, p)
-#         self.driver.quit()
+# try:
+#     with open('results.pickle', 'rb') as p:
+#         results = pickle.load(p)
+# except FileNotFoundError:
+#     results = {}
 
 try:
     urls = [u.strip() for u in open('urls.txt').readlines() if u != '']
@@ -49,7 +37,6 @@ except FileNotFoundError:
     exit()
 
 headers = {'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36'}
-# with WebDriver(webdriver.Chrome()) as driver:
 
 session = r.Session()
 for url in urls:
@@ -87,20 +74,23 @@ for url in urls:
         print('    next_url', next_url)
 
     print(f'Done with {url}')
-    print('Building email message...')
-    b = '\n\n' + '=' * 79 + '\n'
-    m = b.join([f'https://ksl.com/classifieds/listing/{res_id}\n\n{res}' for res_id, res in out_dict.items()])
-    msg = MIMEText(m)
-    keyword = parse.parse_qs(parse.urlparse(url).query)['keyword'][0]
-    msg['Subject'] = f'[KSL] {keyword}'
-    msg['From'] = config['from']
-    msg['To'] = config['to']
+    if len(out_dict) > 0:
+        print('Building email message...')
+        b = '\n\n' + '=' * 79 + '\n'
+        m = b.join([f'https://ksl.com/classifieds/listing/{res_id}\n\n{res}' for res_id, res in out_dict.items()])
+        msg = MIMEText(m)
+        keyword = parse.parse_qs(parse.urlparse(url).query)['keyword'][0]
+        msg['Subject'] = f'[KSL] {keyword}'
+        msg['From'] = config['from']
+        msg['To'] = config['to']
 
-    print('Connecting to SMTP server...')
-    with smtplib.SMTP_SSL(config['server']) as s:
-    # s = smtplib.SMTP(config['server'], config['port'])
-        print('    Logging in...')
-        s.login(config['user'], config['drowssap'])
-        print('    Sending message...')
-        s.send_message(msg)
-        print('    Message sent!')
+        print('Connecting to SMTP server...')
+        with smtplib.SMTP_SSL(config['server']) as s:
+        # s = smtplib.SMTP(config['server'], config['port'])
+            print('    Logging in...')
+            s.login(config['user'], config['drowssap'])
+            print('    Sending message...')
+            s.send_message(msg)
+            print('    Message sent!')
+    else:
+        print('No new listings.')
