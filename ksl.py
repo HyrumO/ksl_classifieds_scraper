@@ -1,10 +1,13 @@
 """Scrape KSL for user's searches and send notification with results."""
 
+from datetime import datetime as dt
+from datetime import timedelta as td
 from email.mime.text import MIMEText
 import json
 import os
 import pickle
 from pprint import pformat
+import re
 import smtplib
 from time import sleep
 from urllib import parse
@@ -16,6 +19,8 @@ import requests as r
 with open('config.json') as config_file:
     config = json.load(config_file)
 
+now = dt.now()
+yesterday = now - td(hours=24)
 
 # class WebDriver:
 #     def __init__(self, driver):
@@ -43,23 +48,40 @@ except FileNotFoundError:
           'You will receive one email for each url.')
     exit()
 
+headers = {'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.139 Safari/537.36'}
 # with WebDriver(webdriver.Chrome()) as driver:
+
+session = r.Session()
 for url in urls:
-    results = {}
+    out_dict = {}
     print(f'fetching {url}...')
     next_url = url
     while next_url:
-        source = r.get(next_url).text
+        sleep(2)
+        source = session.get(next_url, headers=headers).text
         soup = bsoup(source, 'html5lib')
-        for result in soup.find_all(class_='listing-item'):
-            result_id = result.find(name='listing-item-link').get('href')
-            result_txt = result.find(name='listing-item-info').get_text()
-            results[f'https://ksl.com{result_id}'] = result_txt
+        results_json = re.search(r'window.renderSearchSection\((.*?)\)</script>', source, re.S).group(1)
+        results_json = re.sub(r'^\{\s*listings', '{"listings"', results_json)
+        results_json = re.sub(r'\s*spotlights: \[', '"spotlights": [', results_json)
+        results_json = re.sub(r'\s*displayType: \'', '"displayType": \'', results_json)
+        results_json = re.sub(r':\s*\'grid\'', ': "grid"', results_json)
+        results_json = re.sub(r'\s*userData:\s*\{', '"userData": {', results_json)
+        results_json = re.sub(r'\s*gptAdZones:\s*\[', '"gptAdZones": [', results_json)
+        print('results_json:', results_json)
+        results = json.loads(results_json)
+        print('results:', results)
+        for result in results['listings']:
+            modtime = result['modifyTime'].replace(':', '').replace('-', '')
+            modtime = dt.strptime(modtime, '%Y%m%dT%H%M%SZ')
+            if yesterday <= modtime <= now:
+                result_id = result['id']
+                result_txt = pformat(result)
+                out_dict[result_id] = result_txt
 
-        next_link = soup.find(class_='next')
+        next_link = soup.find('a', class_='next')
         print('    link', next_link)
         try:
-            next_url = next_link.get('href')
+            next_url = 'https://www.ksl.com' + next_link.get('href')
         except AttributeError:
             next_url = None
         print('    next_url', next_url)
@@ -67,7 +89,7 @@ for url in urls:
     print(f'Done with {url}')
     print('Building email message...')
     b = '\n\n' + '=' * 79 + '\n'
-    m = b.join([f'{res_id}\n\n{res}' for res_id, res in results.items()])
+    m = b.join([f'https://ksl.com/classifieds/listing/{res_id}\n\n{res}' for res_id, res in out_dict.items()])
     msg = MIMEText(m)
     keyword = parse.parse_qs(parse.urlparse(url).query)['keyword'][0]
     msg['Subject'] = f'[KSL] {keyword}'
